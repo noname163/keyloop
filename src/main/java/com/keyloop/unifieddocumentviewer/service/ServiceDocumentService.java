@@ -1,6 +1,6 @@
 package com.keyloop.unifieddocumentviewer.service;
 
-public class ServiceDocumentService {
+public interface ServiceDocumentService {
 
 	// TODO: Fetch Service System documents for a VIN.
 }
