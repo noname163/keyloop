@@ -1,6 +1,8 @@
 package com.keyloop.unifieddocumentviewer.service;
 
+import com.keyloop.unifieddocumentviewer.entity.DocumentSearchAudit;
+
 public interface AuditService {
 
-	// TODO: Persist document search audit metadata.
+	void recordSearchAudit(DocumentSearchAudit audit);
 }

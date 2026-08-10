@@ -8,5 +8,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class TokenGenerationServiceImpl implements TokenGenerationService {
 
-	// TODO: Implement development-only token generation.
+	@Override
+	public String generateToken(String subject) {
+		// TODO: Implement development-only token generation.
+		return null;
+	}
 }
