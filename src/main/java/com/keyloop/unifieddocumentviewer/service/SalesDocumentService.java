@@ -6,5 +6,5 @@ import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
 
 public interface SalesDocumentService {
 
-	List<UnifiedDocument> findDocumentsByVin(String vin);
+	List<UnifiedDocument> findDocumentsByVin(String vin, String accessToken);
 }
