@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -123,6 +124,26 @@ class DocumentAggregationServiceImplTest {
 		assertEquals(SourceStatus.FAILED, response.sources().get("service"));
 		assertEquals(List.of(salesDocument), response.documents());
 		assertAudit("PARTIAL", 1, 0);
+	}
+
+	@Test
+	void searchDocumentsByVinReturnsPartialServiceDocumentsWhenSalesTimesOut() {
+		service = new DocumentAggregationServiceImpl(salesDocumentService, serviceDocumentService, auditService,
+				executor, Duration.ofMillis(50));
+		UnifiedDocument serviceDocument = document("SERVICE-001", "SERVICE", "2026-07-15T11:00:00Z");
+		when(salesDocumentService.findDocumentsByVin(VIN)).thenAnswer(invocation -> {
+			Thread.sleep(500);
+			return List.of(document("SALE-001", "SALES", "2026-07-01T09:00:00Z"));
+		});
+		when(serviceDocumentService.findDocumentsByVin(VIN)).thenReturn(List.of(serviceDocument));
+
+		DocumentSearchResponse response = service.searchDocumentsByVin(VIN);
+
+		assertTrue(response.partial());
+		assertEquals(SourceStatus.FAILED, response.sources().get("sales"));
+		assertEquals(SourceStatus.SUCCESS, response.sources().get("service"));
+		assertEquals(List.of(serviceDocument), response.documents());
+		assertAudit("PARTIAL", 0, 1);
 	}
 
 	@Test

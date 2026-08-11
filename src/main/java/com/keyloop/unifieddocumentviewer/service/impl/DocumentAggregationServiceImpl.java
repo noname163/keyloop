@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import com.keyloop.unifieddocumentviewer.dto.response.DocumentSearchResponse;
 import com.keyloop.unifieddocumentviewer.dto.response.SourceResult;
@@ -28,10 +29,13 @@ import org.springframework.stereotype.Service;
 @Service
 public class DocumentAggregationServiceImpl implements DocumentAggregationService {
 
+	private static final Duration SOURCE_TIMEOUT = Duration.ofSeconds(5);
+
 	private final SalesDocumentService salesDocumentService;
 	private final ServiceDocumentService serviceDocumentService;
 	private final AuditService auditService;
 	private final ExecutorService executor;
+	private final Duration sourceTimeout;
 
 	@Autowired
 	public DocumentAggregationServiceImpl(SalesDocumentService salesDocumentService,
@@ -41,10 +45,17 @@ public class DocumentAggregationServiceImpl implements DocumentAggregationServic
 
 	DocumentAggregationServiceImpl(SalesDocumentService salesDocumentService,
 			ServiceDocumentService serviceDocumentService, AuditService auditService, ExecutorService executor) {
+		this(salesDocumentService, serviceDocumentService, auditService, executor, SOURCE_TIMEOUT);
+	}
+
+	DocumentAggregationServiceImpl(SalesDocumentService salesDocumentService,
+			ServiceDocumentService serviceDocumentService, AuditService auditService, ExecutorService executor,
+			Duration sourceTimeout) {
 		this.salesDocumentService = salesDocumentService;
 		this.serviceDocumentService = serviceDocumentService;
 		this.auditService = auditService;
 		this.executor = executor;
+		this.sourceTimeout = sourceTimeout;
 	}
 
 	@PreDestroy
@@ -61,10 +72,12 @@ public class DocumentAggregationServiceImpl implements DocumentAggregationServic
 		CompletableFuture<SourceResult> salesFuture = CompletableFuture
 				.supplyAsync(() -> SourceResult.success("sales", salesDocumentService.findDocumentsByVin(normalizedVin)),
 						executor)
+				.completeOnTimeout(SourceResult.failed("sales"), sourceTimeout.toMillis(), TimeUnit.MILLISECONDS)
 				.exceptionally(exception -> SourceResult.failed("sales"));
 		CompletableFuture<SourceResult> serviceFuture = CompletableFuture
 				.supplyAsync(() -> SourceResult.success("service",
 						serviceDocumentService.findDocumentsByVin(normalizedVin)), executor)
+				.completeOnTimeout(SourceResult.failed("service"), sourceTimeout.toMillis(), TimeUnit.MILLISECONDS)
 				.exceptionally(exception -> SourceResult.failed("service"));
 
 		SourceResult sales = salesFuture.join();
