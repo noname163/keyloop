@@ -1,10 +1,10 @@
-package com.keyloop.unifieddocumentviewer.dto;
+package com.keyloop.unifieddocumentviewer.dto.response;
 
 import java.time.Instant;
 
 public record SourceDocumentResponse(
 		String id,
-		String title,
-		String type,
+		String documentName,
+		String documentType,
 		Instant createdAt) {
 }

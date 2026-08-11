@@ -1,11 +1,16 @@
 package com.keyloop.unifieddocumentviewer.controller;
 
+import com.keyloop.unifieddocumentviewer.dto.TokenGenerationRequest;
+import com.keyloop.unifieddocumentviewer.dto.response.TokenGenerationResponse;
 import com.keyloop.unifieddocumentviewer.service.TokenGenerationService;
-import org.springframework.context.annotation.Profile;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@Profile("develop")
+@Tag(name = "Token Generation")
 @RestController
 @RequestMapping("/api/develop/tokens")
 public class TokenGenerationController {
@@ -16,5 +21,9 @@ public class TokenGenerationController {
 		this.tokenGenerationService = tokenGenerationService;
 	}
 
-	// TODO: Add development-only token generation API endpoint.
+	@Operation(summary = "Generate a development bearer token")
+	@PostMapping
+	public TokenGenerationResponse generateToken(@RequestBody TokenGenerationRequest request) {
+		return new TokenGenerationResponse(tokenGenerationService.generateToken(request.userId()));
+	}
 }
