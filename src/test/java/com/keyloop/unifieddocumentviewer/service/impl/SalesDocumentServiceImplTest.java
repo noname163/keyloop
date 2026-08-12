@@ -10,9 +10,13 @@ import java.time.Instant;
 import java.util.List;
 
 import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
+import com.keyloop.unifieddocumentviewer.security.AuthenticatedUser;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
@@ -28,9 +32,16 @@ class SalesDocumentServiceImplTest {
 		service = new SalesDocumentServiceImpl(restClientBuilder, "https://sales.example.test");
 	}
 
+	@AfterEach
+	void clearSecurityContext() {
+		SecurityContextHolder.clearContext();
+	}
+
 	@Test
 	void findDocumentsByVinCallsSalesApiAndMapsDocuments() {
-		server.expect(once(), requestTo("https://sales.example.test?vin=1HGCM82633A004352"))
+		SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+				new AuthenticatedUser("user-123", "tenant-123"), null, List.of()));
+		server.expect(once(), requestTo("https://sales.example.test?vin=1HGCM82633A004352&tenantId=tenant-123"))
 				.andRespond(withSuccess("""
 						[
 							{

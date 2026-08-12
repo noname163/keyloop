@@ -9,5 +9,7 @@ import org.springframework.data.repository.Repository;
 
 public interface VehicleRepository extends Repository<Vehicle, UUID> {
 
-	Page<Vehicle> findAllByTenantId(UUID tenantId, Pageable pageable);
+	Page<Vehicle> findAllByTenantId(String tenantId, Pageable pageable);
+
+	boolean existsByVinAndTenantId(String vin, String tenantId);
 }

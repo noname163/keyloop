@@ -21,37 +21,53 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class SecurityFilter extends OncePerRequestFilter {
 
 	private static final Pattern USER_ID_PATTERN = Pattern.compile("\"(?:sub|userId|user_id)\"\\s*:\\s*\"([^\"]+)\"");
+	private static final Pattern TENANT_ID_PATTERN = Pattern.compile("\"(?:tenantId|tenant_id)\"\\s*:\\s*\"([^\"]+)\"");
 	private static final String BEARER_PREFIX = "Bearer ";
 
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
 			throws ServletException, IOException {
-		String userId = extractUserId(request.getHeader(HttpHeaders.AUTHORIZATION));
-		if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+		TokenClaims tokenClaims = extractTokenClaims(request.getHeader(HttpHeaders.AUTHORIZATION));
+		if (tokenClaims.userId() != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 			SecurityContextHolder.getContext().setAuthentication(
-					new UsernamePasswordAuthenticationToken(userId, null, List.of()));
+					new UsernamePasswordAuthenticationToken(tokenClaims.toPrincipal(), null, List.of()));
 		}
 
 		filterChain.doFilter(request, response);
 	}
 
-	private String extractUserId(String authorizationHeader) {
+	private TokenClaims extractTokenClaims(String authorizationHeader) {
 		if (authorizationHeader == null || !authorizationHeader.startsWith(BEARER_PREFIX)) {
-			return null;
+			return TokenClaims.empty();
 		}
 
 		String[] tokenParts = authorizationHeader.substring(BEARER_PREFIX.length()).split("\\.");
 		if (tokenParts.length < 2) {
-			return null;
+			return TokenClaims.empty();
 		}
 
 		try {
 			String payload = new String(Base64.getUrlDecoder().decode(tokenParts[1]), StandardCharsets.UTF_8);
-			Matcher matcher = USER_ID_PATTERN.matcher(payload);
-			return matcher.find() ? matcher.group(1) : null;
+			return new TokenClaims(extractClaim(USER_ID_PATTERN, payload), extractClaim(TENANT_ID_PATTERN, payload));
 		}
 		catch (IllegalArgumentException exception) {
-			return null;
+			return TokenClaims.empty();
+		}
+	}
+
+	private String extractClaim(Pattern pattern, String payload) {
+		Matcher matcher = pattern.matcher(payload);
+		return matcher.find() ? matcher.group(1) : null;
+	}
+
+	private record TokenClaims(String userId, String tenantId) {
+
+		private static TokenClaims empty() {
+			return new TokenClaims(null, null);
+		}
+
+		private com.keyloop.unifieddocumentviewer.security.AuthenticatedUser toPrincipal() {
+			return new com.keyloop.unifieddocumentviewer.security.AuthenticatedUser(userId, tenantId);
 		}
 	}
 }

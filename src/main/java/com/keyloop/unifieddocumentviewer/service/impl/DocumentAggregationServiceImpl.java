@@ -10,19 +10,25 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import com.keyloop.unifieddocumentviewer.dto.response.DocumentSearchResponse;
 import com.keyloop.unifieddocumentviewer.dto.response.SourceResult;
 import com.keyloop.unifieddocumentviewer.entity.DocumentSearchAudit;
 import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
+import com.keyloop.unifieddocumentviewer.exception.DocumentNotAvailableException;
 import com.keyloop.unifieddocumentviewer.exception.UpstreamDependencyException;
+import com.keyloop.unifieddocumentviewer.exception.VehicleNotFoundException;
+import com.keyloop.unifieddocumentviewer.security.AuthenticatedUser;
 import com.keyloop.unifieddocumentviewer.service.AuditService;
 import com.keyloop.unifieddocumentviewer.service.DocumentAggregationService;
 import com.keyloop.unifieddocumentviewer.service.SalesDocumentService;
 import com.keyloop.unifieddocumentviewer.service.ServiceDocumentService;
+import com.keyloop.unifieddocumentviewer.service.VehicleService;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
@@ -34,26 +40,29 @@ public class DocumentAggregationServiceImpl implements DocumentAggregationServic
 	private final SalesDocumentService salesDocumentService;
 	private final ServiceDocumentService serviceDocumentService;
 	private final AuditService auditService;
+	private final VehicleService vehicleService;
 	private final ExecutorService executor;
 	private final Duration sourceTimeout;
 
 	@Autowired
 	public DocumentAggregationServiceImpl(SalesDocumentService salesDocumentService,
-			ServiceDocumentService serviceDocumentService, AuditService auditService) {
-		this(salesDocumentService, serviceDocumentService, auditService, Executors.newFixedThreadPool(2));
+			ServiceDocumentService serviceDocumentService, AuditService auditService, VehicleService vehicleService) {
+		this(salesDocumentService, serviceDocumentService, auditService, vehicleService, Executors.newFixedThreadPool(2));
 	}
 
 	DocumentAggregationServiceImpl(SalesDocumentService salesDocumentService,
-			ServiceDocumentService serviceDocumentService, AuditService auditService, ExecutorService executor) {
-		this(salesDocumentService, serviceDocumentService, auditService, executor, SOURCE_TIMEOUT);
+			ServiceDocumentService serviceDocumentService, AuditService auditService, VehicleService vehicleService,
+			ExecutorService executor) {
+		this(salesDocumentService, serviceDocumentService, auditService, vehicleService, executor, SOURCE_TIMEOUT);
 	}
 
 	DocumentAggregationServiceImpl(SalesDocumentService salesDocumentService,
-			ServiceDocumentService serviceDocumentService, AuditService auditService, ExecutorService executor,
-			Duration sourceTimeout) {
+			ServiceDocumentService serviceDocumentService, AuditService auditService, VehicleService vehicleService,
+			ExecutorService executor, Duration sourceTimeout) {
 		this.salesDocumentService = salesDocumentService;
 		this.serviceDocumentService = serviceDocumentService;
 		this.auditService = auditService;
+		this.vehicleService = vehicleService;
 		this.executor = executor;
 		this.sourceTimeout = sourceTimeout;
 	}
@@ -66,17 +75,22 @@ public class DocumentAggregationServiceImpl implements DocumentAggregationServic
 	@Override
 	public DocumentSearchResponse searchDocumentsByVin(String vin) {
 		String normalizedVin = vin.toUpperCase();
-		String searchedBy = currentUserId();
-		Instant startedAt = Instant.now();
+		SecurityContext securityContext = SecurityContextHolder.getContext();
+
+		if (!vehicleService.existsByVin(normalizedVin)) {
+			throw new VehicleNotFoundException("Vehicle not found for VIN " + normalizedVin + ".");
+		}
 
 		CompletableFuture<SourceResult> salesFuture = CompletableFuture
-				.supplyAsync(() -> SourceResult.success("sales", salesDocumentService.findDocumentsByVin(normalizedVin)),
+				.supplyAsync(withSecurityContext(securityContext,
+						() -> SourceResult.success("sales", salesDocumentService.findDocumentsByVin(normalizedVin))),
 						executor)
 				.completeOnTimeout(SourceResult.failed("sales"), sourceTimeout.toMillis(), TimeUnit.MILLISECONDS)
 				.exceptionally(exception -> SourceResult.failed("sales"));
 		CompletableFuture<SourceResult> serviceFuture = CompletableFuture
-				.supplyAsync(() -> SourceResult.success("service",
-						serviceDocumentService.findDocumentsByVin(normalizedVin)), executor)
+				.supplyAsync(withSecurityContext(securityContext,
+						() -> SourceResult.success("service",
+								serviceDocumentService.findDocumentsByVin(normalizedVin))), executor)
 				.completeOnTimeout(SourceResult.failed("service"), sourceTimeout.toMillis(), TimeUnit.MILLISECONDS)
 				.exceptionally(exception -> SourceResult.failed("service"));
 
@@ -84,7 +98,6 @@ public class DocumentAggregationServiceImpl implements DocumentAggregationServic
 		SourceResult service = serviceFuture.join();
 
 		if (sales.failed() && service.failed()) {
-			recordAudit(normalizedVin, searchedBy, startedAt, "FAILED", 0, 0);
 			throw new UpstreamDependencyException("Both document source systems are unavailable.");
 		}
 
@@ -94,28 +107,27 @@ public class DocumentAggregationServiceImpl implements DocumentAggregationServic
 		documents.sort(Comparator.comparing(UnifiedDocument::getCreatedAt,
 				Comparator.nullsLast(Comparator.reverseOrder())));
 
+		if (documents.isEmpty()) {
+			throw new DocumentNotAvailableException("Documents are not available for VIN " + normalizedVin + ".");
+		}
+
 		boolean partial = sales.failed() || service.failed();
-		recordAudit(normalizedVin, searchedBy, startedAt, partial ? "PARTIAL" : "SUCCESS",
-				sales.documents().size(), service.documents().size());
 
 		return new DocumentSearchResponse(normalizedVin, partial,
 				Map.of("sales", sales.status(), "service", service.status()), List.copyOf(documents));
 	}
 
-	private String currentUserId() {
-		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-		return authentication == null ? null : authentication.getName();
-	}
-
-	private void recordAudit(String vin, String searchedBy, Instant startedAt, String status,
-			int salesCount, int serviceCount) {
-		try {
-			auditService.recordSearchAudit(new DocumentSearchAudit(vin, searchedBy, startedAt, status,
-					salesCount, serviceCount, Duration.between(startedAt, Instant.now()).toMillis()));
-		}
-		catch (RuntimeException ignored) {
-			// Audit failures should not mask document search results.
-		}
+	private <T> Supplier<T> withSecurityContext(SecurityContext securityContext, Supplier<T> supplier) {
+		return () -> {
+			SecurityContext previousContext = SecurityContextHolder.getContext();
+			try {
+				SecurityContextHolder.setContext(securityContext);
+				return supplier.get();
+			}
+			finally {
+				SecurityContextHolder.setContext(previousContext);
+			}
+		};
 	}
 
 }

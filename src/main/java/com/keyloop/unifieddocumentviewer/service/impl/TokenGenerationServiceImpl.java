@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class TokenGenerationServiceImpl implements TokenGenerationService {
 
+	private static final String DEFAULT_TENANT_ID = "TENANT-001";
+
 	@Override
 	public String generateToken(String userId) {
 		if (userId == null || userId.isBlank()) {
@@ -18,8 +20,8 @@ public class TokenGenerationServiceImpl implements TokenGenerationService {
 
 		String normalizedUserId = userId.trim();
 		String header = "{\"alg\":\"none\",\"typ\":\"JWT\"}";
-		String payload = "{\"userId\":\"" + escapeJson(normalizedUserId) + "\",\"iat\":" + Instant.now().getEpochSecond()
-				+ "}";
+		String payload = "{\"userId\":\"" + escapeJson(normalizedUserId) + "\",\"tenantId\":\""
+				+ DEFAULT_TENANT_ID + "\",\"iat\":" + Instant.now().getEpochSecond() + "}";
 		return base64Url(header) + "." + base64Url(payload) + ".";
 	}
 

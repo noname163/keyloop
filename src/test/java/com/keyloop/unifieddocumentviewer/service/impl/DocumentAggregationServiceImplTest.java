@@ -16,15 +16,20 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.keyloop.unifieddocumentviewer.constants.SourceStatus;
 import com.keyloop.unifieddocumentviewer.dto.response.DocumentSearchResponse;
 import com.keyloop.unifieddocumentviewer.entity.DocumentSearchAudit;
 import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
+import com.keyloop.unifieddocumentviewer.exception.DocumentNotAvailableException;
 import com.keyloop.unifieddocumentviewer.exception.UpstreamDependencyException;
+import com.keyloop.unifieddocumentviewer.exception.VehicleNotFoundException;
+import com.keyloop.unifieddocumentviewer.security.AuthenticatedUser;
 import com.keyloop.unifieddocumentviewer.service.AuditService;
 import com.keyloop.unifieddocumentviewer.service.SalesDocumentService;
 import com.keyloop.unifieddocumentviewer.service.ServiceDocumentService;
+import com.keyloop.unifieddocumentviewer.service.VehicleService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,6 +54,9 @@ class DocumentAggregationServiceImplTest {
 	@Mock
 	private AuditService auditService;
 
+	@Mock
+	private VehicleService vehicleService;
+
 	private ExecutorService executor;
 	private DocumentAggregationServiceImpl service;
 
@@ -56,7 +64,8 @@ class DocumentAggregationServiceImplTest {
 	void setUp() {
 		executor = Executors.newFixedThreadPool(2);
 		service = new DocumentAggregationServiceImpl(salesDocumentService, serviceDocumentService, auditService,
-				executor);
+				vehicleService, executor);
+		when(vehicleService.existsByVin(VIN)).thenReturn(true);
 	}
 
 	@AfterEach
@@ -89,11 +98,16 @@ class DocumentAggregationServiceImplTest {
 		when(salesDocumentService.findDocumentsByVin(VIN)).thenReturn(List.of());
 		when(serviceDocumentService.findDocumentsByVin(VIN)).thenReturn(List.of());
 
-		DocumentSearchResponse response = service.searchDocumentsByVin(VIN);
+		assertThrows(DocumentNotAvailableException.class, () -> service.searchDocumentsByVin(VIN));
+		assertAudit("DOCUMENT_NOT_AVAILABLE", 0, 0);
+	}
 
-		assertFalse(response.partial());
-		assertTrue(response.documents().isEmpty());
-		assertAudit("SUCCESS", 0, 0);
+	@Test
+	void searchDocumentsByVinThrowsVehicleNotFoundBeforeCallingSourcesWhenVehicleDoesNotExist() {
+		when(vehicleService.existsByVin(VIN)).thenReturn(false);
+
+		assertThrows(VehicleNotFoundException.class, () -> service.searchDocumentsByVin(VIN));
+		assertAudit("VEHICLE_NOT_FOUND", 0, 0);
 	}
 
 	@Test
@@ -129,7 +143,7 @@ class DocumentAggregationServiceImplTest {
 	@Test
 	void searchDocumentsByVinReturnsPartialServiceDocumentsWhenSalesTimesOut() {
 		service = new DocumentAggregationServiceImpl(salesDocumentService, serviceDocumentService, auditService,
-				executor, Duration.ofMillis(50));
+				vehicleService, executor, Duration.ofMillis(50));
 		UnifiedDocument serviceDocument = document("SERVICE-001", "SERVICE", "2026-07-15T11:00:00Z");
 		when(salesDocumentService.findDocumentsByVin(VIN)).thenAnswer(invocation -> {
 			Thread.sleep(500);
@@ -171,24 +185,52 @@ class DocumentAggregationServiceImplTest {
 	void searchDocumentsByVinCallsSourceSystemsConcurrently() {
 		CountDownLatch bothStarted = new CountDownLatch(2);
 		CountDownLatch release = new CountDownLatch(1);
+		UnifiedDocument salesDocument = document("SALE-001", "SALES", "2026-07-01T09:00:00Z");
 		when(salesDocumentService.findDocumentsByVin(VIN)).thenAnswer(invocation -> waitForOtherSource(bothStarted,
-				release));
+				release, salesDocument));
 		when(serviceDocumentService.findDocumentsByVin(VIN)).thenAnswer(invocation -> waitForOtherSource(bothStarted,
 				release));
 
 		DocumentSearchResponse response = service.searchDocumentsByVin(VIN);
 
 		assertFalse(response.partial());
-		assertTrue(response.documents().isEmpty());
+		assertEquals(List.of(salesDocument), response.documents());
+	}
+
+	@Test
+	void searchDocumentsByVinPropagatesSecurityContextToSourceThreads() {
+		AtomicReference<Object> salesPrincipal = new AtomicReference<>();
+		AtomicReference<Object> servicePrincipal = new AtomicReference<>();
+		AuthenticatedUser authenticatedUser = new AuthenticatedUser("user-1", "tenant-1");
+		SecurityContextHolder.getContext()
+				.setAuthentication(new UsernamePasswordAuthenticationToken(authenticatedUser, null, List.of()));
+		when(salesDocumentService.findDocumentsByVin(VIN)).thenAnswer(invocation -> {
+			salesPrincipal.set(SecurityContextHolder.getContext().getAuthentication().getPrincipal());
+			return List.of(document("SALE-001", "SALES", "2026-07-01T09:00:00Z"));
+		});
+		when(serviceDocumentService.findDocumentsByVin(VIN)).thenAnswer(invocation -> {
+			servicePrincipal.set(SecurityContextHolder.getContext().getAuthentication().getPrincipal());
+			return List.of();
+		});
+
+		service.searchDocumentsByVin(VIN);
+
+		assertEquals(authenticatedUser, salesPrincipal.get());
+		assertEquals(authenticatedUser, servicePrincipal.get());
 	}
 
 	private List<UnifiedDocument> waitForOtherSource(CountDownLatch bothStarted, CountDownLatch release)
 			throws InterruptedException {
+		return waitForOtherSource(bothStarted, release, new UnifiedDocument[0]);
+	}
+
+	private List<UnifiedDocument> waitForOtherSource(CountDownLatch bothStarted, CountDownLatch release,
+			UnifiedDocument... documents) throws InterruptedException {
 		bothStarted.countDown();
 		assertTrue(bothStarted.await(1, TimeUnit.SECONDS));
 		release.countDown();
 		assertTrue(release.await(1, TimeUnit.SECONDS));
-		return List.of();
+		return List.of(documents);
 	}
 
 	private UnifiedDocument document(String id, String source, String createdAt) {
