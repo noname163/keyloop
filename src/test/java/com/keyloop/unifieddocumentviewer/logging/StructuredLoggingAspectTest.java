@@ -1,15 +1,23 @@
 package com.keyloop.unifieddocumentviewer.logging;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
@@ -29,13 +37,13 @@ class StructuredLoggingAspectTest {
 				VehicleRepository.class, "findAllByTenantId", "ok")));
 
 		String logs = output.getOut() + output.getErr();
-		assertContains(logs, "layer=CONTROLLER");
-		assertContains(logs, "layer=SERVICE");
-		assertContains(logs, "layer=REPOSITORY");
-		assertContains(logs, "status=SUCCESS");
-		assertContains(logs, "startTime=");
-		assertContains(logs, "endTime=");
-		assertContains(logs, "durationMs=");
+		assertContains(logs, "controller operation success");
+		assertContains(logs, "service operation success");
+		assertContains(logs, "repository operation success");
+		assertFalse(logs.contains("layer=CONTROLLER"));
+		assertFalse(logs.contains("status=SUCCESS"));
+		assertFalse(logs.contains("durationMs="));
+		assertFalse(logs.contains("controller operation success {"));
 	}
 
 	@Test
@@ -47,8 +55,32 @@ class StructuredLoggingAspectTest {
 
 		assertSame(failure, thrown);
 		String logs = output.getOut() + output.getErr();
-		assertContains(logs, "status=FAILED");
-		assertContains(logs, "exceptionType=java.lang.IllegalStateException");
+		assertContains(logs, "service operation failed");
+		assertContains(logs, "java.lang.IllegalStateException: boom");
+		assertFalse(logs.contains("status=FAILED"));
+		assertFalse(logs.contains("exceptionType=java.lang.IllegalStateException"));
+	}
+
+	@Test
+	void structuredFieldsAreArgumentsAndMessageIsHumanReadableOnly() throws Throwable {
+		Logger logger = (Logger) LoggerFactory.getLogger(StructuredLoggingAspect.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		logger.addAppender(appender);
+
+		try {
+			assertEquals("ok", aspect.logOperation(joinPoint("com.keyloop.unifieddocumentviewer.controller.DocumentController",
+					DocumentController.class, "searchDocuments", "ok")));
+		}
+		finally {
+			logger.detachAppender(appender);
+		}
+
+		ILoggingEvent event = appender.list.get(appender.list.size() - 1);
+		assertEquals(Level.INFO, event.getLevel());
+		assertEquals("controller operation success", event.getFormattedMessage());
+		assertStructuredFields(event,
+				"layer", "className", "methodName", "status", "startTime", "endTime", "durationMs", "requestData");
 	}
 
 	private ProceedingJoinPoint joinPoint(String declaringTypeName, Class<?> declaringType, String methodName,
@@ -73,6 +105,14 @@ class StructuredLoggingAspectTest {
 		if (!value.contains(expected)) {
 			throw new AssertionError("Expected logs to contain " + expected + " but were:\n" + value);
 		}
+	}
+
+	private void assertStructuredFields(ILoggingEvent event, String... expectedFieldNames) {
+		if (event.getMarkerList() == null || event.getMarkerList().isEmpty()) {
+			throw new AssertionError("Expected structured log markers");
+		}
+		String fields = event.getMarkerList().toString();
+		List.of(expectedFieldNames).forEach(field -> assertContains(fields, field + "="));
 	}
 
 	private static final class DocumentController {

@@ -33,6 +33,7 @@ class AuditLogQueryServiceTest {
 		AuditLogLookupResponse response = service(2).findByRequestId("req-002");
 
 		assertEquals("req-002", response.requestId());
+		assertEquals(86409000L, response.durationMs());
 		assertEquals(2, response.records().size());
 		assertEquals("CONTROLLER", response.records().get(0).get("layer"));
 		assertEquals("SERVICE", response.records().get(1).get("layer"));
@@ -63,7 +64,7 @@ class AuditLogQueryServiceTest {
 
 	private String json(String requestId, String startTime, String layer) {
 		return """
-				{"timestamp":"%s","applicationName":"unifieddocumentviewer","requestId":"%s","userId":"user-001","tenantId":"tenant-001","layer":"%s","className":"DocumentController","methodName":"searchDocuments","status":"SUCCESS","startTime":"%s","durationMs":1}
-				""".formatted(startTime, requestId, layer, startTime).trim();
+				{"timestamp":"%s","applicationName":"unifieddocumentviewer","requestId":"%s","userId":"user-001","tenantId":"tenant-001","layer":"%s","className":"DocumentController","methodName":"searchDocuments","status":"SUCCESS","startTime":"%s","endTime":"%s","durationMs":1}
+				""".formatted(startTime, requestId, layer, startTime, startTime).trim();
 	}
 }

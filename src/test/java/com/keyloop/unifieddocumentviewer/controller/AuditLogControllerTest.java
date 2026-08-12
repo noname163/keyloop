@@ -38,12 +38,13 @@ class AuditLogControllerTest {
 	@Test
 	void findByRequestIdReturnsMatchingRecords() throws Exception {
 		String requestId = "req-002";
-		when(auditLogQueryService.findByRequestId(requestId)).thenReturn(new AuditLogLookupResponse(requestId,
+		when(auditLogQueryService.findByRequestId(requestId)).thenReturn(new AuditLogLookupResponse(requestId, 42L,
 				List.of(Map.of("requestId", requestId, "layer", "CONTROLLER"))));
 
 		mockMvc.perform(get("/api/v1/audits/{requestId}", requestId))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.requestId").value(requestId))
+				.andExpect(jsonPath("$.durationMs").value(42))
 				.andExpect(jsonPath("$.records[0].layer").value("CONTROLLER"));
 	}
 

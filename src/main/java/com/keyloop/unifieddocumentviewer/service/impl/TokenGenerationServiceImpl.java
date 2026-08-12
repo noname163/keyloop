@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class TokenGenerationServiceImpl implements TokenGenerationService {
 
-	private static final String DEFAULT_TENANT_ID = "TENANT-001";
+	private static final String DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000000";
 
 	@Override
 	public String generateToken(String userId) {

@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import net.logstash.logback.argument.StructuredArguments;
+import net.logstash.logback.marker.Markers;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -61,8 +61,8 @@ public class StructuredLoggingAspect {
 		try {
 			Instant endTime = Instant.now();
 			long durationMs = (System.nanoTime() - startNanos) / 1_000_000;
+			String message = message(layer, status);
 			Map<String, Object> fields = new LinkedHashMap<>();
-			fields.put("timestamp", endTime.toString());
 			fields.put("applicationName", applicationName);
 			fields.put("environment", environment);
 			fields.put("instanceId", instanceId);
@@ -79,17 +79,16 @@ public class StructuredLoggingAspect {
 			fields.put("startTime", startTime.toString());
 			fields.put("endTime", endTime.toString());
 			fields.put("durationMs", durationMs);
-			fields.put("message", message(layer, status));
 			Map<String, Object> requestData = requestDataSanitizer.sanitize(layer, joinPoint.getArgs());
 			if (requestData != null && !requestData.isEmpty()) {
 				fields.put("requestData", requestData);
 			}
 			if (exception != null) {
 				fields.put("exceptionType", exception.getClass().getName());
-				LOGGER.error("structured operation log {}", StructuredArguments.fields(fields), exception);
+				LOGGER.error(Markers.appendEntries(fields), message, exception);
 			}
 			else {
-				LOGGER.info("structured operation log {}", StructuredArguments.fields(fields));
+				LOGGER.info(Markers.appendEntries(fields), message);
 			}
 		}
 		catch (RuntimeException loggingFailure) {

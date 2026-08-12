@@ -1,6 +1,7 @@
 package com.keyloop.unifieddocumentviewer.service.audit;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -41,7 +42,54 @@ public class AuditLogQueryService {
 		if (records.isEmpty()) {
 			throw new AuditLogNotFoundException(requestId);
 		}
-		return new AuditLogLookupResponse(requestId, records);
+		return new AuditLogLookupResponse(requestId, durationMs(records), records);
+	}
+
+	private Long durationMs(List<Map<String, Object>> records) {
+		Instant earliestStart = null;
+		Instant latestEnd = null;
+		Long maxRecordDuration = null;
+		for (Map<String, Object> record : records) {
+			Instant start = instant(record.get("startTime"));
+			if (start != null && (earliestStart == null || start.isBefore(earliestStart))) {
+				earliestStart = start;
+			}
+			Instant end = instant(record.get("endTime"));
+			if (end != null && (latestEnd == null || end.isAfter(latestEnd))) {
+				latestEnd = end;
+			}
+			Long recordDuration = longValue(record.get("durationMs"));
+			if (recordDuration != null && (maxRecordDuration == null || recordDuration > maxRecordDuration)) {
+				maxRecordDuration = recordDuration;
+			}
+		}
+		if (earliestStart != null && latestEnd != null && !latestEnd.isBefore(earliestStart)) {
+			return Duration.between(earliestStart, latestEnd).toMillis();
+		}
+		return maxRecordDuration;
+	}
+
+	private Instant instant(Object value) {
+		if (value instanceof String text) {
+			Instant instant = parseInstant(text);
+			return Instant.EPOCH.equals(instant) ? null : instant;
+		}
+		return null;
+	}
+
+	private Long longValue(Object value) {
+		if (value instanceof Number number) {
+			return number.longValue();
+		}
+		if (value instanceof String text) {
+			try {
+				return Long.parseLong(text);
+			}
+			catch (NumberFormatException exception) {
+				return null;
+			}
+		}
+		return null;
 	}
 
 	private void validate(String requestId) {
