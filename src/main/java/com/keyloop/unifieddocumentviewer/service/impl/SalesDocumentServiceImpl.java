@@ -4,11 +4,10 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-import com.keyloop.unifieddocumentviewer.dto.SourceDocumentResponse;
+import com.keyloop.unifieddocumentviewer.dto.response.SourceDocumentResponse;
 import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
 import com.keyloop.unifieddocumentviewer.service.SalesDocumentService;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -23,15 +22,14 @@ public class SalesDocumentServiceImpl implements SalesDocumentService {
 	}
 
 	@Override
-	public List<UnifiedDocument> findDocumentsByVin(String vin, String accessToken) {
+	public List<UnifiedDocument> findDocumentsByVin(String vin) {
 		if (vin == null || vin.isBlank()) {
 			return List.of();
 		}
 		String normalizedVin = vin.toUpperCase();
 
 		SourceDocumentResponse[] response = restClient.get()
-				.uri(uriBuilder -> uriBuilder.path("/documents").queryParam("vin", normalizedVin).build())
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+				.uri(uriBuilder -> uriBuilder.queryParam("vin", normalizedVin).build())
 				.retrieve()
 				.body(SourceDocumentResponse[].class);
 
@@ -43,8 +41,8 @@ public class SalesDocumentServiceImpl implements SalesDocumentService {
 				.filter(Objects::nonNull)
 				.map(document -> new UnifiedDocument(
 						document.id(),
-						document.title(),
-						document.type(),
+						document.documentName(),
+						document.documentType(),
 						"SALES",
 						document.createdAt()))
 				.toList();

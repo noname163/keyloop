@@ -1,10 +1,8 @@
 package com.keyloop.unifieddocumentviewer.service;
 
-import java.util.List;
-
-import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
+import com.keyloop.unifieddocumentviewer.dto.response.DocumentSearchResponse;
 
 public interface DocumentAggregationService {
 
-	List<UnifiedDocument> searchDocumentsByVin(String vin, String requestId, String searchedBy);
+	DocumentSearchResponse searchDocumentsByVin(String vin);
 }
