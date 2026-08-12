@@ -17,23 +17,23 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+
 import com.keyloop.unifieddocumentviewer.constants.SourceStatus;
 import com.keyloop.unifieddocumentviewer.dto.response.DocumentSearchResponse;
 import com.keyloop.unifieddocumentviewer.entity.DocumentSearchAudit;
 import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
 import com.keyloop.unifieddocumentviewer.exception.UpstreamDependencyException;
-import com.keyloop.unifieddocumentviewer.service.AuditService;
 import com.keyloop.unifieddocumentviewer.service.SalesDocumentService;
 import com.keyloop.unifieddocumentviewer.service.ServiceDocumentService;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 @ExtendWith(MockitoExtension.class)
 class DocumentAggregationServiceImplTest {
@@ -46,16 +46,13 @@ class DocumentAggregationServiceImplTest {
 	@Mock
 	private ServiceDocumentService serviceDocumentService;
 
-	@Mock
-	private AuditService auditService;
-
 	private ExecutorService executor;
 	private DocumentAggregationServiceImpl service;
 
 	@BeforeEach
 	void setUp() {
 		executor = Executors.newFixedThreadPool(2);
-		service = new DocumentAggregationServiceImpl(salesDocumentService, serviceDocumentService, auditService,
+		service = new DocumentAggregationServiceImpl(salesDocumentService, serviceDocumentService,
 				executor);
 	}
 
@@ -81,7 +78,6 @@ class DocumentAggregationServiceImplTest {
 		assertEquals(SourceStatus.SUCCESS, response.sources().get("sales"));
 		assertEquals(SourceStatus.SUCCESS, response.sources().get("service"));
 		assertEquals(List.of(serviceDocument, salesDocument), response.documents());
-		assertAudit("SUCCESS", 1, 1);
 	}
 
 	@Test
@@ -93,7 +89,6 @@ class DocumentAggregationServiceImplTest {
 
 		assertFalse(response.partial());
 		assertTrue(response.documents().isEmpty());
-		assertAudit("SUCCESS", 0, 0);
 	}
 
 	@Test
@@ -108,7 +103,6 @@ class DocumentAggregationServiceImplTest {
 		assertEquals(SourceStatus.FAILED, response.sources().get("sales"));
 		assertEquals(SourceStatus.SUCCESS, response.sources().get("service"));
 		assertEquals(List.of(serviceDocument), response.documents());
-		assertAudit("PARTIAL", 0, 1);
 	}
 
 	@Test
@@ -123,12 +117,11 @@ class DocumentAggregationServiceImplTest {
 		assertEquals(SourceStatus.SUCCESS, response.sources().get("sales"));
 		assertEquals(SourceStatus.FAILED, response.sources().get("service"));
 		assertEquals(List.of(salesDocument), response.documents());
-		assertAudit("PARTIAL", 1, 0);
 	}
 
 	@Test
 	void searchDocumentsByVinReturnsPartialServiceDocumentsWhenSalesTimesOut() {
-		service = new DocumentAggregationServiceImpl(salesDocumentService, serviceDocumentService, auditService,
+		service = new DocumentAggregationServiceImpl(salesDocumentService, serviceDocumentService,
 				executor, Duration.ofMillis(50));
 		UnifiedDocument serviceDocument = document("SERVICE-001", "SERVICE", "2026-07-15T11:00:00Z");
 		when(salesDocumentService.findDocumentsByVin(VIN)).thenAnswer(invocation -> {
@@ -143,7 +136,6 @@ class DocumentAggregationServiceImplTest {
 		assertEquals(SourceStatus.FAILED, response.sources().get("sales"));
 		assertEquals(SourceStatus.SUCCESS, response.sources().get("service"));
 		assertEquals(List.of(serviceDocument), response.documents());
-		assertAudit("PARTIAL", 0, 1);
 	}
 
 	@Test
@@ -152,19 +144,6 @@ class DocumentAggregationServiceImplTest {
 		when(serviceDocumentService.findDocumentsByVin(VIN)).thenThrow(new RuntimeException("service down"));
 
 		assertThrows(UpstreamDependencyException.class, () -> service.searchDocumentsByVin(VIN));
-		assertAudit("FAILED", 0, 0);
-	}
-
-	@Test
-	void searchDocumentsByVinIgnoresAuditFailure() {
-		UnifiedDocument salesDocument = document("SALE-001", "SALES", "2026-07-01T09:00:00Z");
-		when(salesDocumentService.findDocumentsByVin(VIN)).thenReturn(List.of(salesDocument));
-		when(serviceDocumentService.findDocumentsByVin(VIN)).thenReturn(List.of());
-		doThrow(new RuntimeException("audit down")).when(auditService).recordSearchAudit(any());
-
-		DocumentSearchResponse response = service.searchDocumentsByVin(VIN);
-
-		assertEquals(List.of(salesDocument), response.documents());
 	}
 
 	@Test
@@ -195,17 +174,4 @@ class DocumentAggregationServiceImplTest {
 		return new UnifiedDocument(id, id + " title", id + " type", source, Instant.parse(createdAt));
 	}
 
-	private void assertAudit(String status, int salesCount, int serviceCount) {
-		ArgumentCaptor<DocumentSearchAudit> auditCaptor = ArgumentCaptor.forClass(DocumentSearchAudit.class);
-		verify(auditService).recordSearchAudit(auditCaptor.capture());
-		DocumentSearchAudit audit = auditCaptor.getValue();
-		assertEquals(VIN, audit.getVin());
-		if ("SUCCESS".equals(status) && salesCount == 1 && serviceCount == 1) {
-			assertEquals("user-1", audit.getSearchedBy());
-		}
-		assertEquals(status, audit.getStatus());
-		assertEquals(salesCount, audit.getSalesResultCount());
-		assertEquals(serviceCount, audit.getServiceResultCount());
-		assertTrue(audit.getDurationMs() >= 0);
-	}
 }
