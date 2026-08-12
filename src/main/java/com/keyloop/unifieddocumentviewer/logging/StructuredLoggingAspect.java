@@ -35,9 +35,12 @@ public class StructuredLoggingAspect {
 		this.instanceId = instanceId;
 	}
 
-	@Around("within(com.keyloop.unifieddocumentviewer.controller..*)"
+	@Around("("
+			+ "within(com.keyloop.unifieddocumentviewer.controller..*)"
 			+ " || within(com.keyloop.unifieddocumentviewer.service..*)"
-			+ " || within(com.keyloop.unifieddocumentviewer.repository..*)")
+			+ " || within(com.keyloop.unifieddocumentviewer.repository..*)"
+			+ ")"
+			+ " && !within(com.keyloop.unifieddocumentviewer.service.audit..*)")
 	public Object logOperation(ProceedingJoinPoint joinPoint) throws Throwable {
 		LogLayer layer = layer(joinPoint.getSignature().getDeclaringTypeName());
 		Instant startTime = Instant.now();
