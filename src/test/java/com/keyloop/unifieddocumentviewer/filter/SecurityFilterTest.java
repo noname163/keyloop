@@ -6,9 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
+import com.keyloop.unifieddocumentviewer.logging.LoggingMdc;
 import com.keyloop.unifieddocumentviewer.security.AuthenticatedUser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -22,6 +24,7 @@ class SecurityFilterTest {
 	@AfterEach
 	void clearSecurityContext() {
 		SecurityContextHolder.clearContext();
+		MDC.clear();
 	}
 
 	@Test
@@ -32,20 +35,21 @@ class SecurityFilterTest {
 		securityFilter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
 
 		assertEquals("user-123", SecurityContextHolder.getContext().getAuthentication().getName());
+		assertEquals("user-123", MDC.get(LoggingMdc.USER_ID));
 	}
 
 	@Test
-	void doFilterStoresTenantIdFromJwtInSecurityContext() throws Exception {
+	void doFilterStoresTenantIdFromJwtInSecurityContextPrincipalAndMdc() throws Exception {
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.addHeader(HttpHeaders.AUTHORIZATION,
-				"Bearer " + tokenWithPayload("{\"userId\":\"user-123\",\"tenantId\":\"tenant-123\"}"));
+				"Bearer " + tokenWithPayload("{\"sub\":\"user-123\",\"tenantId\":\"tenant-456\"}"));
 
 		securityFilter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
 
-		AuthenticatedUser principal = (AuthenticatedUser) SecurityContextHolder.getContext()
-				.getAuthentication()
+		AuthenticatedUser principal = (AuthenticatedUser) SecurityContextHolder.getContext().getAuthentication()
 				.getPrincipal();
-		assertEquals("tenant-123", principal.tenantId());
+		assertEquals("tenant-456", principal.tenantId());
+		assertEquals("tenant-456", MDC.get(LoggingMdc.TENANT_ID));
 	}
 
 	@Test

@@ -84,6 +84,17 @@ class ServiceDocumentServiceImplTest {
 	}
 
 	@Test
+	void findDocumentsByVinOmitsTenantIdWhenPrincipalIsNotAuthenticatedUser() {
+		SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+				"user-123", null, List.of()));
+		server.expect(once(), requestTo("https://service.example.test?vin=1HGCM82633A004352"))
+				.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		assertTrue(service.findDocumentsByVin("1HGCM82633A004352").isEmpty());
+		server.verify();
+	}
+
+	@Test
 	void findDocumentsByVinIgnoresNullItemsFromServiceApiResponse() {
 		server.expect(once(), requestTo("https://service.example.test?vin=1HGCM82633A004352"))
 				.andRespond(withSuccess("""
