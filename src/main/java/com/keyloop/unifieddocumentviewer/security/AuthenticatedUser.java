@@ -1,4 +1,4 @@
-package com.keyloop.unifieddocumentviewer.logging;
+package com.keyloop.unifieddocumentviewer.security;
 
 import java.security.Principal;
 

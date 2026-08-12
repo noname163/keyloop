@@ -25,15 +25,13 @@ services:
       DB_MAX_POOL_SIZE: ${DB_MAX_POOL_SIZE:-10}
       DB_MIN_IDLE: ${DB_MIN_IDLE:-2}
       DB_CONNECTION_TIMEOUT_MS: ${DB_CONNECTION_TIMEOUT_MS:-30000}
-      SALES_SYSTEM_BASE_URL: ${SALES_SYSTEM_BASE_URL:-http://host.docker.internal:8081}
-      SERVICE_SYSTEM_BASE_URL: ${SERVICE_SYSTEM_BASE_URL:-http://host.docker.internal:8082}
+      SALES_SYSTEM_BASE_URL: ${SALES_SYSTEM_BASE_URL:-https://6a7a6b608c69b3eb4a173191.mockapi.io/api/external/sales-service}
+      SERVICE_SYSTEM_BASE_URL: ${SERVICE_SYSTEM_BASE_URL:-https://6a7a6b608c69b3eb4a173191.mockapi.io/api/external/services-document}
     depends_on:
       database:
         condition: service_healthy
     ports:
       - "${APP_PORT:-8080}:8080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:

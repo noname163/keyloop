@@ -6,8 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
-import com.keyloop.unifieddocumentviewer.logging.AuthenticatedUser;
 import com.keyloop.unifieddocumentviewer.logging.LoggingMdc;
+import com.keyloop.unifieddocumentviewer.security.AuthenticatedUser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;

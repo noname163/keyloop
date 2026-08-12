@@ -9,20 +9,24 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import com.keyloop.unifieddocumentviewer.dto.response.DocumentSearchResponse;
 import com.keyloop.unifieddocumentviewer.dto.response.SourceResult;
 import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
+import com.keyloop.unifieddocumentviewer.exception.DocumentNotAvailableException;
 import com.keyloop.unifieddocumentviewer.exception.UpstreamDependencyException;
+import com.keyloop.unifieddocumentviewer.exception.VehicleNotFoundException;
 import com.keyloop.unifieddocumentviewer.logging.ContextPropagatingExecutorService;
 import com.keyloop.unifieddocumentviewer.service.DocumentAggregationService;
 import com.keyloop.unifieddocumentviewer.service.SalesDocumentService;
 import com.keyloop.unifieddocumentviewer.service.ServiceDocumentService;
+import com.keyloop.unifieddocumentviewer.service.VehicleService;
 
 import jakarta.annotation.PreDestroy;
 
@@ -31,59 +35,67 @@ public class DocumentAggregationServiceImpl implements DocumentAggregationServic
 
     private static final Duration SOURCE_TIMEOUT = Duration.ofSeconds(5);
 
-    private final SalesDocumentService salesDocumentService;
-    private final ServiceDocumentService serviceDocumentService;
-    private final ExecutorService executor;
-    private final Duration sourceTimeout;
+	private final SalesDocumentService salesDocumentService;
+	private final ServiceDocumentService serviceDocumentService;
+	private final VehicleService vehicleService;
+	private final ExecutorService executor;
+	private final Duration sourceTimeout;
 
     @Autowired
     public DocumentAggregationServiceImpl(SalesDocumentService salesDocumentService,
-            ServiceDocumentService serviceDocumentService) {
-        this(salesDocumentService, serviceDocumentService,
+            ServiceDocumentService serviceDocumentService, VehicleService vehicleService) {
+        this(salesDocumentService, serviceDocumentService, vehicleService,
                 new ContextPropagatingExecutorService(Executors.newFixedThreadPool(2)));
     }
 
     DocumentAggregationServiceImpl(SalesDocumentService salesDocumentService,
-            ServiceDocumentService serviceDocumentService, ExecutorService executor) {
-        this(salesDocumentService, serviceDocumentService, executor, SOURCE_TIMEOUT);
+            ServiceDocumentService serviceDocumentService, VehicleService vehicleService, ExecutorService executor) {
+        this(salesDocumentService, serviceDocumentService, vehicleService, executor, SOURCE_TIMEOUT);
     }
 
-    DocumentAggregationServiceImpl(SalesDocumentService salesDocumentService,
-            ServiceDocumentService serviceDocumentService, ExecutorService executor,
-            Duration sourceTimeout) {
-        this.salesDocumentService = salesDocumentService;
-        this.serviceDocumentService = serviceDocumentService;
-        this.executor = executor;
-        this.sourceTimeout = sourceTimeout;
-    }
+	DocumentAggregationServiceImpl(SalesDocumentService salesDocumentService,
+			ServiceDocumentService serviceDocumentService, VehicleService vehicleService,
+			ExecutorService executor, Duration sourceTimeout) {
+		this.salesDocumentService = salesDocumentService;
+		this.serviceDocumentService = serviceDocumentService;
+		this.vehicleService = vehicleService;
+		this.executor = executor;
+		this.sourceTimeout = sourceTimeout;
+	}
 
     @PreDestroy
     void shutdownExecutor() {
         executor.shutdown();
     }
 
-    @Override
-    public DocumentSearchResponse searchDocumentsByVin(String vin) {
-        String normalizedVin = vin.toUpperCase();
+	@Override
+	public DocumentSearchResponse searchDocumentsByVin(String vin) {
+		String normalizedVin = vin.toUpperCase();
+		SecurityContext securityContext = SecurityContextHolder.getContext();
 
-        CompletableFuture<SourceResult> salesFuture = CompletableFuture
-                .supplyAsync(
-                        () -> SourceResult.success("sales", salesDocumentService.findDocumentsByVin(normalizedVin)),
-                        executor)
-                .completeOnTimeout(SourceResult.failed("sales"), sourceTimeout.toMillis(), TimeUnit.MILLISECONDS)
-                .exceptionally(exception -> SourceResult.failed("sales"));
-        CompletableFuture<SourceResult> serviceFuture = CompletableFuture
-                .supplyAsync(() -> SourceResult.success("service",
-                        serviceDocumentService.findDocumentsByVin(normalizedVin)), executor)
-                .completeOnTimeout(SourceResult.failed("service"), sourceTimeout.toMillis(), TimeUnit.MILLISECONDS)
-                .exceptionally(exception -> SourceResult.failed("service"));
+		if (!vehicleService.existsByVin(normalizedVin)) {
+			throw new VehicleNotFoundException("Vehicle not found for VIN " + normalizedVin + ".");
+		}
+
+		CompletableFuture<SourceResult> salesFuture = CompletableFuture
+				.supplyAsync(withSecurityContext(securityContext,
+						() -> SourceResult.success("sales", salesDocumentService.findDocumentsByVin(normalizedVin))),
+						executor)
+				.completeOnTimeout(SourceResult.failed("sales"), sourceTimeout.toMillis(), TimeUnit.MILLISECONDS)
+				.exceptionally(exception -> SourceResult.failed("sales"));
+		CompletableFuture<SourceResult> serviceFuture = CompletableFuture
+				.supplyAsync(withSecurityContext(securityContext,
+						() -> SourceResult.success("service",
+								serviceDocumentService.findDocumentsByVin(normalizedVin))), executor)
+				.completeOnTimeout(SourceResult.failed("service"), sourceTimeout.toMillis(), TimeUnit.MILLISECONDS)
+				.exceptionally(exception -> SourceResult.failed("service"));
 
         SourceResult sales = salesFuture.join();
         SourceResult service = serviceFuture.join();
 
-        if (sales.failed() && service.failed()) {
-            throw new UpstreamDependencyException("Both document source systems are unavailable.");
-        }
+		if (sales.failed() && service.failed()) {
+			throw new UpstreamDependencyException("Both document source systems are unavailable.");
+		}
 
         List<UnifiedDocument> documents = new ArrayList<>();
         documents.addAll(sales.documents());
@@ -91,15 +103,27 @@ public class DocumentAggregationServiceImpl implements DocumentAggregationServic
         documents.sort(Comparator.comparing(UnifiedDocument::getCreatedAt,
                 Comparator.nullsLast(Comparator.reverseOrder())));
 
-        boolean partial = sales.failed() || service.failed();
+		if (documents.isEmpty()) {
+			throw new DocumentNotAvailableException("Documents are not available for VIN " + normalizedVin + ".");
+		}
+
+		boolean partial = sales.failed() || service.failed();
 
         return new DocumentSearchResponse(normalizedVin, partial,
                 Map.of("sales", sales.status(), "service", service.status()), List.copyOf(documents));
     }
 
-    private String currentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return authentication == null ? null : authentication.getName();
-    }
+	private <T> Supplier<T> withSecurityContext(SecurityContext securityContext, Supplier<T> supplier) {
+		return () -> {
+			SecurityContext previousContext = SecurityContextHolder.getContext();
+			try {
+				SecurityContextHolder.setContext(securityContext);
+				return supplier.get();
+			}
+			finally {
+				SecurityContextHolder.setContext(previousContext);
+			}
+		};
+	}
 
 }

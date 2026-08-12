@@ -21,12 +21,12 @@ class AuditLogQueryServiceTest {
 
 	@Test
 	void returnsMatchingRecordsFromMultipleFilesInChronologicalOrder() throws Exception {
-		write("unifieddocumentviewer.log",
+		write("unifieddocumentviewer-audit-" + LocalDate.now() + ".log",
 				json("req-002", "2026-08-12T13:30:20Z", "SERVICE"),
 				"{invalid-json",
 				json("req-001", "2026-08-12T13:30:10Z", "CONTROLLER"),
 				"{partial");
-		write("unifieddocumentviewer-" + LocalDate.now().minusDays(1) + ".log",
+		write("unifieddocumentviewer-audit-" + LocalDate.now().minusDays(1) + ".log",
 				json("req-003", "2026-08-11T13:30:12Z", "SERVICE"),
 				json("req-002", "2026-08-11T13:30:11Z", "CONTROLLER"));
 
@@ -56,7 +56,9 @@ class AuditLogQueryServiceTest {
 	}
 
 	private void write(String fileName, String... lines) throws Exception {
-		Files.write(logDirectory.resolve(fileName), String.join(System.lineSeparator(), lines).getBytes());
+		Path auditDirectory = logDirectory.resolve("audit");
+		Files.createDirectories(auditDirectory);
+		Files.write(auditDirectory.resolve(fileName), String.join(System.lineSeparator(), lines).getBytes());
 	}
 
 	private String json(String requestId, String startTime, String layer) {

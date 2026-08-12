@@ -7,8 +7,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.keyloop.unifieddocumentviewer.logging.AuthenticatedUser;
 import com.keyloop.unifieddocumentviewer.logging.LoggingMdc;
+import com.keyloop.unifieddocumentviewer.security.AuthenticatedUser;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

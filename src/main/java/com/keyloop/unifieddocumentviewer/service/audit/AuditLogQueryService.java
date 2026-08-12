@@ -51,13 +51,12 @@ public class AuditLogQueryService {
 	}
 
 	private Set<Path> candidateFiles() {
-		Path logDirectory = Path.of(properties.logPath()).normalize();
+		Path logDirectory = Path.of(properties.logPath(), "audit").normalize();
 		String applicationName = properties.applicationName();
 		Set<Path> files = new LinkedHashSet<>();
-		files.add(logDirectory.resolve(applicationName + ".log").normalize());
 		IntStream.range(0, properties.maxDays())
 				.mapToObj(LocalDate.now()::minusDays)
-				.map(date -> applicationName + "-" + date.format(DateTimeFormatter.ISO_LOCAL_DATE) + ".log")
+				.map(date -> applicationName + "-audit-" + date.format(DateTimeFormatter.ISO_LOCAL_DATE) + ".log")
 				.map(logDirectory::resolve)
 				.map(Path::normalize)
 				.forEach(files::add);
