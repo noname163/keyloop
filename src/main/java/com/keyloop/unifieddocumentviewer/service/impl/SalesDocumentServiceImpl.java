@@ -6,11 +6,9 @@ import java.util.Objects;
 
 import com.keyloop.unifieddocumentviewer.dto.response.SourceDocumentResponse;
 import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
-import com.keyloop.unifieddocumentviewer.security.AuthenticatedUser;
+import com.keyloop.unifieddocumentviewer.security.SecurityContextUtils;
 import com.keyloop.unifieddocumentviewer.service.SalesDocumentService;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -25,12 +23,17 @@ public class SalesDocumentServiceImpl implements SalesDocumentService {
 	}
 
 	@Override
+	public String getSourceName() {
+		return "sales";
+	}
+
+	@Override
 	public List<UnifiedDocument> findDocumentsByVin(String vin) {
 		if (vin == null || vin.isBlank()) {
 			return List.of();
 		}
 		String normalizedVin = vin.toUpperCase();
-		String tenantId = currentTenantId();
+		String tenantId = SecurityContextUtils.currentTenantId();
 
 		SourceDocumentResponse[] response = restClient.get()
 				.uri(uriBuilder -> {
@@ -56,13 +59,5 @@ public class SalesDocumentServiceImpl implements SalesDocumentService {
 						"SALES",
 						document.createdAt()))
 				.toList();
-	}
-
-	private String currentTenantId() {
-		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-		if (authentication == null || !(authentication.getPrincipal() instanceof AuthenticatedUser authenticatedUser)) {
-			return null;
-		}
-		return authenticatedUser.tenantId();
 	}
 }
