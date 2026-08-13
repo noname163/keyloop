@@ -4,7 +4,9 @@ import java.util.List;
 
 import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
 
-public interface SalesDocumentService extends DocumentSource {
+public interface DocumentSource {
+
+	String getSourceName();
 
 	List<UnifiedDocument> findDocumentsByVin(String vin);
 }
