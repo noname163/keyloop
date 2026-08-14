@@ -114,6 +114,34 @@ APP_PORT=8090 POSTGRES_PASSWORD=my-password docker compose up --build -d
 
 ---
 
+## Running Automated Tests
+
+Run the complete automated test suite with Maven Wrapper.
+
+On macOS or Linux:
+
+```bash
+./mvnw test
+```
+
+On Windows:
+
+```bash
+mvnw.cmd test
+```
+
+The test suite covers the core business behavior, including document aggregation, Sales and Service source handling, vehicle access, token generation, request filtering, logging, and audit lookup behavior.
+
+The most important aggregation scenarios include:
+
+- Documents returned by both external systems
+- Documents returned by Sales only
+- Documents returned by Service only
+- No documents returned by either source
+- Partial-source and external-source failure behavior
+
+---
+
 ## API Usage
 
 The easiest way to explore the API is through Swagger UI:
@@ -391,6 +419,45 @@ Do not expose the following endpoints publicly without production-grade authenti
 POST /api/develop/tokens
 GET /api/v1/audits/{requestId}
 ```
+
+---
+
+## AI Collaboration Narrative
+
+### Strategy
+
+I used AI as a development assistant rather than as an autonomous code generator. I first broke the assessment into smaller areas such as document aggregation, external API integration, tenant-aware access, error handling, observability, Docker deployment, and testing.
+
+For each area, I gave the AI the relevant requirements and project context, then used it to explore implementation options, identify edge cases, review design decisions, and accelerate repetitive work such as test scaffolding and documentation.
+
+### Verification and Refinement
+
+I did not accept AI-generated output without review. After each AI-assisted change, I checked whether the implementation matched the assessment requirements and the existing code structure.
+
+My verification process included:
+
+- Reviewing generated code for correctness, readability, and unnecessary complexity
+- Checking tenant-aware behavior and failure handling
+- Verifying external API aggregation and partial-result behavior
+- Running and refining unit tests for the main business scenarios
+- Manually testing endpoints through Swagger UI and `curl`
+- Reviewing logs and request IDs to confirm traceability
+- Simplifying or replacing AI suggestions when they did not fit the scope of the assessment
+
+### Ensuring Final Quality
+
+The final implementation was validated through both automated tests and manual functional testing.
+
+Special attention was given to the core aggregation scenarios:
+
+- Documents available from both Sales and Service systems
+- Documents available from Sales only
+- Documents available from Service only
+- Vehicle exists but neither source contains documents
+- External-source failures and partial results
+- Tenant-aware vehicle access
+
+AI was used to accelerate implementation, review, and documentation, while architecture decisions, code verification, testing, and final acceptance remained developer-controlled.
 
 ---
 
