@@ -1,43 +1,68 @@
 # Keyloop Unified Document Viewer
 
-Spring Boot service backed by PostgreSQL.
+Spring Boot service backed by PostgreSQL that provides a unified view of vehicle-related documents from multiple external dealership systems.
 
-The Docker Compose setup:
+The application currently aggregates documents from:
 
-- Builds the Spring Boot application
-- Starts the PostgreSQL database
-- Runs Flyway migrations at application startup
-- Persists PostgreSQL data in a named Docker volume
+- Sales System API
+- Service System API
+
+It also provides:
+
+- Vehicle lookup support
+- Development bearer-token generation
+- Request/audit lookup by `requestId`
+- Swagger/OpenAPI documentation
+- Docker Compose based local deployment
 
 ---
 
-## Run with Docker Compose
+## Quick Start
 
-### 1. Create the deployment environment file
+### Prerequisites
+
+Make sure the following tools are installed:
+
+- Docker
+- Docker Compose
+
+No manual environment-variable setup is required for the default local setup. `compose.yaml` already provides default values for PostgreSQL, datasource settings, connection-pool settings, the Sales System API, the Service System API, and the application port.
+
+### 1. Clone the repository
 
 ```bash
-cp .env.example .env
+git clone https://github.com/noname163/keyloop.git
+cd keyloop
 ```
 
-### 2. Configure environment variables
-
-Update `POSTGRES_PASSWORD` in the `.env` file.
-
-If the Sales System API and Service System API do not run on ports `8081` and `8082` of the Docker host, update their URLs accordingly.
-
-### 3. Build and start the application
+### 2. Build and start the stack
 
 ```bash
 docker compose up --build -d
 ```
 
+This starts:
+
+- PostgreSQL
+- Keyloop Unified Document Viewer application
+
+The application waits for PostgreSQL to become healthy before starting.
+
+Flyway migrations run automatically during application startup.
+
+### 3. Verify the containers
+
+```bash
+docker compose ps
+```
+
 ### 4. Open Swagger UI
 
-Swagger UI is available at:
+```text
+http://localhost:8080/swagger-ui/index.html
+```
 
-`http://localhost:8080/swagger-ui/index.html`
-
-If `APP_PORT` has been changed, use the configured port instead.
+The default application port is `8080`.
 
 ### 5. View application logs
 
@@ -51,88 +76,226 @@ docker compose logs -f application
 docker compose down
 ```
 
-Database contents remain persisted in the `postgres-data` Docker volume.
+PostgreSQL data is persisted in the `postgres-data` Docker volume.
 
-To remove the containers **and all database data**, run:
+To stop the application and remove all persisted database data:
 
 ```bash
 docker compose down --volumes
 ```
 
-All deployment settings are documented in `.env.example`.
+---
 
-Docker Compose supplies the application's:
+## Docker Compose Configuration
 
-- `DB_URL`
-- `DB_USERNAME`
-- `DB_PASSWORD`
+The default local values are already defined in `compose.yaml`, so creating a `.env` file is optional.
 
-from the PostgreSQL configuration, so users do not need to manually construct a JDBC URL.
+Default values include:
+
+| Setting | Default |
+| --- | --- |
+| PostgreSQL database | `keyloop` |
+| PostgreSQL user | `keyloop` |
+| PostgreSQL password | `change-me` |
+| Application port | `8080` |
+| DB max pool size | `10` |
+| DB min idle connections | `2` |
+| DB connection timeout | `30000 ms` |
+| Sales System API | Mock API configured in `compose.yaml` |
+| Service System API | Mock API configured in `compose.yaml` |
+
+You only need to override these values when you want to use a different local configuration.
+
+For example:
+
+```bash
+APP_PORT=8090 POSTGRES_PASSWORD=my-password docker compose up --build -d
+```
 
 ---
 
-## Build Only the Application Image
+## API Usage
 
-Build the Docker image:
-
-```bash
-docker build -t keyloop-unified-document-viewer .
-```
-
-When running the image without Docker Compose, provide every environment variable referenced by:
+The easiest way to explore the API is through Swagger UI:
 
 ```text
-src/main/resources/application.properties
+http://localhost:8080/swagger-ui/index.html
+```
+
+The following examples use `curl` so the complete API flow can also be tested from the command line.
+
+---
+
+## Generate a Development Bearer Token
+
+For local assessment and testing, the application provides a development token-generation endpoint:
+
+```text
+POST /api/develop/tokens
+```
+
+Request body:
+
+```json
+{
+  "userId": "user-001"
+}
+```
+
+Example request:
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"user-001"}' \
+  http://localhost:8080/api/develop/tokens
+```
+
+Example response:
+
+```json
+{
+  "token": "<generated-token>"
+}
+```
+
+The generated development token contains:
+
+- `userId`: taken from the request
+- `tenantId`: currently defaults to `TENANT-001`
+- `iat`: token creation timestamp
+
+> **Important:** The development token uses an unsigned JWT-style token (`alg: none`). It exists only to simplify local/demo testing and must not be treated as a production authentication mechanism.
+
+Store the returned token and send it as a Bearer token when testing APIs:
+
+```bash
+TOKEN="<generated-token>"
+```
+
+Then call an API with:
+
+```bash
+curl \
+  -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/vehicles
+```
+
+In Swagger UI, click **Authorize** and enter:
+
+```text
+Bearer <generated-token>
+```
+
+---
+
+## Vehicle API
+
+### List Vehicles
+
+```text
+GET /vehicles
 ```
 
 Example:
 
 ```bash
-docker run --rm -p 8080:8080 \
-  -e DB_URL=jdbc:postgresql://database-host:5432/keyloop \
-  -e DB_USERNAME=keyloop \
-  -e DB_PASSWORD=secret \
-  -e DB_MAX_POOL_SIZE=10 \
-  -e DB_MIN_IDLE=2 \
-  -e DB_CONNECTION_TIMEOUT_MS=30000 \
-  -e SALES_SYSTEM_BASE_URL=http://sales-host:8081 \
-  -e SERVICE_SYSTEM_BASE_URL=http://service-host:8082 \
-  keyloop-unified-document-viewer
+curl \
+  -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8080/vehicles?page=0&size=20"
 ```
+
+The endpoint returns a paginated list of vehicles stored in PostgreSQL.
+
+---
+
+## Unified Document Search API
+
+The main feature of this service is the unified vehicle document lookup.
+
+```text
+GET /api/v1/vehicles/{vin}/documents
+```
+
+The VIN must contain exactly 17 valid VIN characters.
+
+Example:
+
+```bash
+curl \
+  -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/v1/vehicles/1HGCM82633A004352/documents
+```
+
+The backend queries the configured document sources and returns one consolidated response.
+
+The current implementation integrates:
+
+- Sales System
+- Service System
+
+The response includes documents from the available sources together with source information so the client can distinguish where each document came from.
+
+---
+
+## Request ID and Traceability
+
+Requests can include an optional request ID through the `X-Request-ID` header.
+
+Example:
+
+```bash
+curl \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Request-ID: demo-request-001" \
+  http://localhost:8080/api/v1/vehicles/1HGCM82633A004352/documents
+```
+
+A request ID must match:
+
+```regex
+[A-Za-z0-9._:-]{1,128}
+```
+
+The request ID is included in structured application logs and can later be used for audit lookup.
 
 ---
 
 ## Local Audit Lookup API
 
-The application writes structured JSON log records to daily rolling log files using the existing Logback configuration.
+The application writes structured JSON log records to daily rolling log files:
 
 ```text
 logs/unifieddocumentviewer.log
 logs/unifieddocumentviewer-YYYY-MM-DD.log
 ```
 
-### Query Audit Logs
+Audit records can be queried by request ID:
 
-For local assessment and diagnostic purposes, audit records can be queried using a `requestId`.
+```text
+GET /api/v1/audits/{requestId}
+```
+
+Example:
 
 ```bash
 curl \
-  -H "Authorization: Bearer <token>" \
-  http://localhost:8080/api/v1/audits/22c9792e-7396-4d46-a843-922e13a38117
+  -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/v1/audits/demo-request-001
 ```
 
-### Example Response
+Example response:
 
 ```json
 {
-  "requestId": "22c9792e-7396-4d46-a843-922e13a38117",
+  "requestId": "demo-request-001",
   "records": [
     {
       "timestamp": "2026-08-12T13:30:19.100Z",
       "applicationName": "unifieddocumentviewer",
-      "requestId": "22c9792e-7396-4d46-a843-922e13a38117",
+      "requestId": "demo-request-001",
       "userId": "user-001",
-      "tenantId": "tenant-001",
+      "tenantId": "TENANT-001",
       "apiName": "GET /api/v1/vehicles/1HGCM82633A004352/documents",
       "layer": "CONTROLLER",
       "className": "DocumentController",
@@ -147,50 +310,13 @@ curl \
 }
 ```
 
----
-
-## Request ID Validation
-
-The `requestId` must match the same safe format accepted by `X-Request-ID`:
-
-```regex
-[A-Za-z0-9._:-]{1,128}
-```
-
-The audit lookup does **not** use the request ID to construct a file path.
-
-Instead, it:
-
-1. Scans the active application log
-2. Scans recent daily rollover log files under `LOG_PATH`
-3. Parses each JSON line using Jackson
-4. Matches the structured `requestId` field exactly
+The audit lookup does not construct file paths from the supplied request ID. It scans the active and recent rollover log files, parses each JSON record, and performs an exact structured `requestId` match.
 
 Malformed or partially written log lines are skipped and logged internally.
 
----
+### Audit Lookup Errors
 
-## Audit Lookup Configuration
-
-The lookup window defaults to **7 days**.
-
-It can be configured using an environment variable:
-
-```properties
-AUDIT_LOOKUP_MAX_DAYS=7
-```
-
-or through the application property:
-
-```properties
-audit.lookup.max-days=7
-```
-
----
-
-## Error Responses
-
-If no audit records are found:
+If no records are found:
 
 ```text
 HTTP 404
@@ -206,55 +332,42 @@ INVALID_REQUEST_ID
 
 ---
 
-## Security Considerations
+## Security Notes
 
-Security behavior follows the current assessment configuration.
+The current project is configured for assessment/demo usage.
 
-Bearer tokens are parsed to extract:
+Bearer tokens are parsed to populate audit context such as:
 
 - `userId`
 - `tenantId`
 
-These values are used as part of the audit context.
+The current Spring Security configuration permits application endpoints because application roles and authorization policies are not part of the current assessment scope.
 
-Application endpoints are otherwise permitted because authorization roles are not currently defined.
+The token-generation endpoint and local audit endpoint should therefore be considered development/demo utilities.
 
-> **Important:** `/api/v1/audits/{requestId}` is intended as a local/demo operational endpoint.
->
-> Do not expose this endpoint publicly without adding an appropriate administrative or audit-viewer permission.
+Do not expose the following endpoints publicly without production-grade authentication and authorization:
+
+```text
+POST /api/develop/tokens
+GET /api/v1/audits/{requestId}
+```
 
 ---
 
 ## Audit Lookup Limitations
 
-The file-based audit lookup is intentionally lightweight.
-
-Its lookup complexity is:
-
-```text
-O(n)
-```
-
-where `n` is the number of log lines within the configured lookup window.
-
-This approach is suitable for:
+The current file-based lookup is intentionally lightweight and suitable for:
 
 - Local development
-- Demo environments
+- Demonstrations
 - Assessment traceability
 - Low-volume diagnostics
 
-It works well for a **single application instance**.
+The lookup is approximately `O(n)` over the log lines in the configured lookup window.
 
-In a multi-instance deployment, however, a request may have been handled by another application node. Therefore, the corresponding audit records may not exist in the local instance's log files.
+It works best for a single application instance. In a multi-instance deployment, a request may have been handled by another instance and therefore may not exist in the local node's files.
 
----
-
-## Production Audit Architecture
-
-For production environments, audit and application logs should be moved to centralized log storage.
-
-A possible architecture is:
+For production, move logs to centralized storage such as:
 
 ```text
 Application Instances
@@ -269,4 +382,20 @@ Elasticsearch
 Kibana / Centralized Audit Search
 ```
 
-This allows audit records from multiple application instances to be searched from a single location.
+---
+
+## Build Only the Application Image
+
+To build only the Spring Boot Docker image:
+
+```bash
+docker build -t keyloop-unified-document-viewer .
+```
+
+Running this image directly instead of using Docker Compose requires supplying a reachable PostgreSQL datasource and any external-service configuration required by `application.properties`.
+
+For the recommended local setup, use Docker Compose instead:
+
+```bash
+docker compose up --build -d
+```
