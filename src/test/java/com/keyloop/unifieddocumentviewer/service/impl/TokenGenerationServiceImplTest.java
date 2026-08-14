@@ -23,6 +23,7 @@ class TokenGenerationServiceImplTest {
 
 		String payload = new String(Base64.getUrlDecoder().decode(tokenParts[1]), StandardCharsets.UTF_8);
 		assertTrue(payload.contains("\"userId\":\"user-123\""));
+		assertTrue(payload.contains("\"tenantId\":\"00000000-0000-0000-0000-000000000000\""));
 		assertTrue(payload.contains("\"iat\":"));
 	}
 

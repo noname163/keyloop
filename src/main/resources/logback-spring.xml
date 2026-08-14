@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+	<springProperty scope="context" name="applicationName" source="spring.application.name" defaultValue="unifieddocumentviewer"/>
+	<property name="LOG_PATH" value="${LOG_PATH:-logs}"/>
+	<property name="LOG_MAX_HISTORY" value="${LOG_MAX_HISTORY:-30}"/>
+	<property name="LOG_TOTAL_SIZE_CAP" value="${LOG_TOTAL_SIZE_CAP:-1GB}"/>
+	<property name="AUDIT_LOG_MAX_HISTORY" value="${AUDIT_LOG_MAX_HISTORY:-30}"/>
+	<property name="AUDIT_LOG_TOTAL_SIZE_CAP" value="${AUDIT_LOG_TOTAL_SIZE_CAP:-1GB}"/>
+
+	<appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+			<providers>
+				<timestamp>
+					<fieldName>timestamp</fieldName>
+				</timestamp>
+				<mdc/>
+				<logstashMarkers/>
+				<arguments/>
+				<logLevel/>
+				<loggerName/>
+				<threadName/>
+				<message/>
+				<stackTrace/>
+			</providers>
+		</encoder>
+	</appender>
+
+	<appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<file>${LOG_PATH}/${applicationName}.log</file>
+		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+			<fileNamePattern>${LOG_PATH}/${applicationName}-%d{yyyy-MM-dd}.log</fileNamePattern>
+			<maxHistory>${LOG_MAX_HISTORY}</maxHistory>
+			<totalSizeCap>${LOG_TOTAL_SIZE_CAP}</totalSizeCap>
+		</rollingPolicy>
+		<encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+			<providers>
+				<timestamp>
+					<fieldName>timestamp</fieldName>
+				</timestamp>
+				<mdc/>
+				<logstashMarkers/>
+				<arguments/>
+				<logLevel/>
+				<loggerName/>
+				<threadName/>
+				<message/>
+				<stackTrace/>
+			</providers>
+		</encoder>
+	</appender>
+
+	<appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<filter class="com.keyloop.unifieddocumentviewer.logging.AuditRequestIdFilter"/>
+		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+			<fileNamePattern>${LOG_PATH}/audit/${applicationName}-audit-%d{yyyy-MM-dd}.log</fileNamePattern>
+			<maxHistory>${AUDIT_LOG_MAX_HISTORY}</maxHistory>
+			<totalSizeCap>${AUDIT_LOG_TOTAL_SIZE_CAP}</totalSizeCap>
+		</rollingPolicy>
+		<encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+			<providers>
+				<timestamp>
+					<fieldName>timestamp</fieldName>
+				</timestamp>
+				<mdc/>
+				<logstashMarkers/>
+				<arguments/>
+				<logLevel/>
+				<loggerName/>
+				<threadName/>
+				<message/>
+				<stackTrace/>
+			</providers>
+		</encoder>
+	</appender>
+
+	<root level="INFO">
+		<appender-ref ref="CONSOLE"/>
+		<appender-ref ref="FILE"/>
+		<appender-ref ref="AUDIT_FILE"/>
+	</root>
+</configuration>

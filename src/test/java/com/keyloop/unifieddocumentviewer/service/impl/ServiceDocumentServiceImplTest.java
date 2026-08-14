@@ -10,9 +10,13 @@ import java.time.Instant;
 import java.util.List;
 
 import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
+import com.keyloop.unifieddocumentviewer.security.AuthenticatedUser;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
@@ -28,9 +32,16 @@ class ServiceDocumentServiceImplTest {
 		service = new ServiceDocumentServiceImpl(restClientBuilder, "https://service.example.test");
 	}
 
+	@AfterEach
+	void clearSecurityContext() {
+		SecurityContextHolder.clearContext();
+	}
+
 	@Test
 	void findDocumentsByVinCallsServiceApiAndMapsDocuments() {
-		server.expect(once(), requestTo("https://service.example.test?vin=1HGCM82633A004352"))
+		SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+				new AuthenticatedUser("user-123", "tenant-123"), null, List.of()));
+		server.expect(once(), requestTo("https://service.example.test?vin=1HGCM82633A004352&tenantId=tenant-123"))
 				.andRespond(withSuccess("""
 						[
 							{
@@ -67,6 +78,17 @@ class ServiceDocumentServiceImplTest {
 	void findDocumentsByVinReturnsEmptyListWhenServiceApiReturnsNullBody() {
 		server.expect(once(), requestTo("https://service.example.test?vin=1HGCM82633A004352"))
 				.andRespond(withSuccess("null", MediaType.APPLICATION_JSON));
+
+		assertTrue(service.findDocumentsByVin("1HGCM82633A004352").isEmpty());
+		server.verify();
+	}
+
+	@Test
+	void findDocumentsByVinOmitsTenantIdWhenPrincipalIsNotAuthenticatedUser() {
+		SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+				"user-123", null, List.of()));
+		server.expect(once(), requestTo("https://service.example.test?vin=1HGCM82633A004352"))
+				.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
 		assertTrue(service.findDocumentsByVin("1HGCM82633A004352").isEmpty());
 		server.verify();

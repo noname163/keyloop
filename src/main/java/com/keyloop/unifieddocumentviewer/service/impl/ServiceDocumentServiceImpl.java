@@ -6,6 +6,7 @@ import java.util.Objects;
 
 import com.keyloop.unifieddocumentviewer.dto.response.SourceDocumentResponse;
 import com.keyloop.unifieddocumentviewer.entity.UnifiedDocument;
+import com.keyloop.unifieddocumentviewer.security.SecurityContextUtils;
 import com.keyloop.unifieddocumentviewer.service.ServiceDocumentService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -22,14 +23,26 @@ public class ServiceDocumentServiceImpl implements ServiceDocumentService {
 	}
 
 	@Override
+	public String getSourceName() {
+		return "service";
+	}
+
+	@Override
 	public List<UnifiedDocument> findDocumentsByVin(String vin) {
 		if (vin == null || vin.isBlank()) {
 			return List.of();
 		}
 		String normalizedVin = vin.toUpperCase();
+		String tenantId = SecurityContextUtils.currentTenantId();
 
 		SourceDocumentResponse[] response = restClient.get()
-				.uri(uriBuilder -> uriBuilder.queryParam("vin", normalizedVin).build())
+				.uri(uriBuilder -> {
+					uriBuilder.queryParam("vin", normalizedVin);
+					if (tenantId != null) {
+						uriBuilder.queryParam("tenantId", tenantId);
+					}
+					return uriBuilder.build();
+				})
 				.retrieve()
 				.body(SourceDocumentResponse[].class);
 
