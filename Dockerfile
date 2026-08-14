@@ -14,7 +14,10 @@ RUN mvn -B -DskipTests package && \
 FROM eclipse-temurin:17-jre-jammy AS runtime
 WORKDIR /app
 
-RUN groupadd --system spring && useradd --system --gid spring spring
+RUN groupadd --system spring && \
+    useradd --system --gid spring spring && \
+    mkdir -p /app/logs/audit && \
+    chown -R spring:spring /app/logs
 COPY --from=build --chown=spring:spring /workspace/application.jar application.jar
 
 # Provide working upstreams in the image so it can be deployed without requiring
