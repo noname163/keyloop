@@ -12,6 +12,7 @@ services:
       retries: 10
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     restart: unless-stopped
 
   application:
@@ -25,6 +26,7 @@ services:
       DB_MAX_POOL_SIZE: ${DB_MAX_POOL_SIZE:-10}
       DB_MIN_IDLE: ${DB_MIN_IDLE:-2}
       DB_CONNECTION_TIMEOUT_MS: ${DB_CONNECTION_TIMEOUT_MS:-30000}
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
       SALES_SYSTEM_BASE_URL: ${SALES_SYSTEM_BASE_URL:-https://6a7a6b608c69b3eb4a173191.mockapi.io/api/external/sales-service}
       SERVICE_SYSTEM_BASE_URL: ${SERVICE_SYSTEM_BASE_URL:-https://6a7a6b608c69b3eb4a173191.mockapi.io/api/external/services-document}
     depends_on:
